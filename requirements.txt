@@ -1,0 +1,4 @@
+Pygments==2.2.0
+termcolor==1.1.0
+requests==2.18.4
+edgegrid_python==1.1.0

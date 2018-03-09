@@ -1,0 +1,12 @@
+{
+  "requirements": {
+    "python": "2.7.6"
+  },
+  "commands": [
+    {
+      "name": "audience-segmentation",
+      "version": "0.1.0",
+      "description": "An example Akamai CLI command Audience Segmentation Cloudlet written in Python"
+    }
+  ]
+}
