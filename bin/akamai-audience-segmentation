@@ -213,7 +213,15 @@ def main():
 
     test_env = os.getenv('AKAMAI_EDGERC')
     print('AKAMAI_EDGERC: ', test_env)
+<<<<<<< HEAD
 
+=======
+<<<<<<< HEAD
+
+=======
+    
+>>>>>>> 652ab68c6ee6e6f8614f59aef1b835563ced6738
+>>>>>>> 2c9c37807c23e8048d8c76c015bb56331474bc54
     #print(policyName)
 
     if opts.command == 'help':
