@@ -194,7 +194,7 @@ def main():
     parser_update.add_argument('--rule', required=True, help='Rule name. Example: \'Test Rule #1\'')
     parser_update.add_argument('--weights', required=True, help='New percentages. Example: \'1,50\'')
     parser_update.add_argument('--edgerc', help='Config file [default: ~/.edgerc]')
-    parser_update.add_argument('--activate', help='Activate the policy to stage|production')
+    parser_update.add_argument('--activate', required=False, help='Activate the policy to stage|production')
   
     opts = parser.parse_args()
 
@@ -211,22 +211,6 @@ def main():
     rule_name = opts.rule
     new_weights = opts.weights.split(",")
 
-<<<<<<< HEAD
-=======
-    test_env = os.getenv('AKAMAI_EDGERC')
-    print('AKAMAI_EDGERC: ', test_env)
-<<<<<<< HEAD
-
-=======
-<<<<<<< HEAD
-
-=======
-    
->>>>>>> 652ab68c6ee6e6f8614f59aef1b835563ced6738
->>>>>>> 2c9c37807c23e8048d8c76c015bb56331474bc54
-    #print(policyName)
-
->>>>>>> 3c02682e668e8a1fbbbf51ef539cbca4326dab10
     if opts.command == 'help':
         parser.print_help()
 
@@ -241,7 +225,8 @@ def main():
         # in case we mistype one of the elif statements...
         parser.print_help(sys.stderr)
 
-    if opts.command == 'activate':
+
+    if opts.activate == 'stage' or opts.activate == 'production':
         activate_policy(opts.activate)
 
 if __name__ == '__main__':
