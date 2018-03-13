@@ -212,7 +212,9 @@ def main():
     rule_name = opts.rule
     new_weights = opts.weights.split(",")
 
-
+    test_env = os.getenv('AKAMAI_EDGERC')
+    print('AKAMAI_EDGERC: ', test_env)
+    
     #print(policyName)
 
     if opts.command == 'help':
