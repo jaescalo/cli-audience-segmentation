@@ -81,19 +81,18 @@ def clone_policyId_version(policyId, version):
     headers = {'content-type': 'application/json'}
     # Convert the json object to a string that the API can interpret
     based_on_version = 'Based on version ' + version
-    post_body = {"description":based_on_version,"matchRuleFormat":"1.0","matchRules":[]}
-    post_body = json.dumps(post_body, sort_keys=True, indent=4)
-    colorful_json = format_json(post_body)
+    post_body_json = {"description":based_on_version,"matchRuleFormat":"1.0","matchRules":[]}
+    post_body = json.dumps(post_body_json, sort_keys=True, indent=4)
+    colorful_json = format_json(post_body_json)
     print('POST body for the request:\n', colorful_json)
     request = session.post(urljoin(baseurl, '/cloudlets/api/v2/policies/' + policyId + '/versions?cloneVersion=' + version), data=post_body, headers=headers)
     request = json.loads(request.text)
     # Pretty print
     colorful_json = format_json(request)
-    #print('Response body from the new cloned version:\n',colorful_json,'\n')
+    print('Response body from the new cloned version:\n',colorful_json,'\n')
     #request ={"activations":[],"createDate":1520004856647,"createdBy":"bmv3bs6m5s2ixbip","deleted":"false","description":"API Call. Clone Policy for Rule edits.","lastModifiedBy":"bmv3bs6m5s2ixbip","lastModifiedDate":1520004856647,"location":"/cloudlets/api/v2/policies/31646/versions/9","matchRuleFormat":"1.0","matchRules":[{"akaRuleId":"e4f2bbb96f534931","end":0,"forwardSettings":{"originId":"Charter2"},"id":0,"location":"/cloudlets/api/v2/policies/31646/versions/9/rules/e4f2bbb96f534931","matches":[{"caseSensitive":"false","matchOperator":"equals","matchType":"range","negate":"false","objectMatchValue":{"type":"range","value":[80,100]}}],"name":"Test Rule #2","start":0,"type":"asMatchRule"},{"akaRuleId":"916f453b14bc51ef","end":0,"forwardSettings":{"originId":"Charter1"},"id":0,"location":"/cloudlets/api/v2/policies/31646/versions/9/rules/916f453b14bc51ef","matches":[{"caseSensitive":"false","matchOperator":"equals","matchType":"range","negate":"false","objectMatchValue":{"type":"range","value":[1,50]}},{"caseSensitive":"false","matchOperator":"contains","matchType":"path","matchValue":"/A/*","negate":"false"}],"name":"Test Rule #1","start":0,"type":"asMatchRule"}],"policyId":31646,"revisionId":1324100,"rulesLocked":"false","version":9}
     #colorful_json = format_json(request)
     print('\n',colorful_json,'\n')
-    print(request)
     get_akaRuleId(request)
     return()
 
@@ -212,6 +211,8 @@ def main():
     rule_name = opts.rule
     new_weights = opts.weights.split(",")
 
+    test_env = os.getenv('AKAMAI_EDGERC')
+    print('AKAMAI_EDGERC: ', test_env)
 
     #print(policyName)
 
