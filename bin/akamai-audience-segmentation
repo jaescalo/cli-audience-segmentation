@@ -194,7 +194,7 @@ def main():
     parser_update.add_argument('--rule', required=True, help='Rule name. Example: \'Test Rule #1\'')
     parser_update.add_argument('--weights', required=True, help='New percentages. Example: \'1,50\'')
     parser_update.add_argument('--edgerc', help='Config file [default: ~/.edgerc]')
-    parser_update.add_argument('--activate', help='Activate the policy to stage|production')
+    parser_update.add_argument('--activate', required=False, help='Activate the policy to stage|production')
   
     opts = parser.parse_args()
 
@@ -225,7 +225,8 @@ def main():
         # in case we mistype one of the elif statements...
         parser.print_help(sys.stderr)
 
-    if opts.command == 'activate':
+
+    if opts.activate == 'stage' or opts.activate == 'production':
         activate_policy(opts.activate)
 
 if __name__ == '__main__':
