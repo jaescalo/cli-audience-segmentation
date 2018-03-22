@@ -20,6 +20,7 @@ import urllib
 import argparse
 from termcolor import colored
 from pygments import highlight, lexers, formatters
+import logging
 
 if sys.version_info[0] < 3:
     from urlparse import urljoin
@@ -154,7 +155,8 @@ def push_new_rule(rule_to_edit, new_version):
     # Pretty print
     request = json.loads(request.text)
     colorful_json = format_json(request)
-    print(colorful_json)
+    #print(colorful_json)
+    logging.info('JSON BODY', colorful_json)
     return()
 
 
@@ -179,45 +181,103 @@ def format_json(json_body):
     return(json_body)
 
 
+def init_config(edgerc_file, section):
+    global baseurl, session
+    print(os.getenv("AKAMAI_EDGERC"))
+    print(os.getenv("AKAMAI_EDGERC_SECTION"))
+    # Check if the edgerc_file variable or the AKAMAI_EDGERC env var exist then use a default value if they don't exist.
+    if not edgerc_file:
+        if not os.getenv("AKAMAI_EDGERC"):
+            edgerc_file = os.path.join(os.path.expanduser("~"), '.edgerc')
+        else:
+            edgerc_file = os.getenv("AKAMAI_EDGERC")
+
+    if not os.access(edgerc_file, os.R_OK):
+        print("Unable to read edgerc file \"%s\"" % edgerc_file)
+        exit(1)
+
+    if not section:
+        if not os.getenv("AKAMAI_EDGERC_SECTION"):
+            section = "cloudlets"
+        else:
+            section = os.getenv("AKAMAI_EDGERC_SECTION")
+
+    try:
+        edgerc = EdgeRc(edgerc_file)
+        baseurl = 'https://%s' % edgerc.get(section, 'host')
+
+        session = requests.Session()
+        session.auth = EdgeGridAuth.from_edgerc(edgerc, section)
+
+        return(baseurl, session)
+
+    except configparser.NoSectionError:
+        print("Edgerc section \"%s\" not found" % section)
+        exit(1)
+    except Exception:
+        print("Unknown error occurred trying to read edgerc file (%s)" % edgerc_file)
+        exit(1)
+
+
 def main():
     parser = MyArgumentParser(
-            description='Akamai CLI Python Example',
+            description='Akamai CLI Audience Segmentation Cloudlet Python Example', add_help=False
     )
+    parser.add_argument('--version', action='version')
 
-    subparsers = parser.add_subparsers(help='commands', dest='command')
+    subparsers = parser.add_subparsers(title='Commands', dest='command', metavar="")
 
     create_parser = subparsers.add_parser('help', help='Show available help')
     create_parser = subparsers.add_parser('list', help='Subcommands')
-    parser_update = subparsers.add_parser('update', help='Modify target rule')
-    parser_update.add_argument('--section', required=True, help='Config section in .edgerc')
-    parser_update.add_argument('--policy', required=True, help='Policy name')
-    parser_update.add_argument('--rule', required=True, help='Rule name. Example: \'Test Rule #1\'')
-    parser_update.add_argument('--weights', required=True, help='New percentages. Example: \'1,50\'')
-    parser_update.add_argument('--edgerc', help='Config file [default: ~/.edgerc]')
-    parser_update.add_argument('--activate', required=False, help='Activate the policy to stage|production')
-  
+    parser_update = subparsers.add_parser('update', help='Modify target rule', add_help=False)
+    
+    mandatory = parser_update.add_argument_group('required arguments')
+    mandatory.add_argument('--policy', required=True, help='Policy name')
+    mandatory.add_argument('--rule', required=True, help='Rule name. Example: \'Test Rule #1\'')
+    mandatory.add_argument('--weights', required=True, help='New percentages. Example: \'1,50\'')
+    
+    optional = parser_update.add_argument_group('optional arguments')
+    optional.add_argument('--activate', help='Activate the policy to staging|production')
+    optional.add_argument('--edgerc', help='Config file [default: ~/.edgerc]')
+    optional.add_argument('--section', help='Config section in .edgerc')
+    optional.add_argument('--verbose', action='store_true', help='Enable verbose')
+
     opts = parser.parse_args()
 
-    global baseurl, session
-    rc_path = os.path.expanduser('~/.edgerc')
-    edgerc = EdgeRc(rc_path)
-    baseurl = 'https://%s' % edgerc.get(opts.section, 'host')
 
-    session = requests.Session()
-    session.auth = EdgeGridAuth.from_edgerc(edgerc, opts.section)
+    if len(sys.argv) <= 1:
+        parser.print_help()
+        return 0
+
+    if opts.verbose:
+        logging.basicConfig(format="%(levelname)s: %(message)s", level=logging.DEBUG)
+        logging.info("Verbose output.")
+    else:
+        logging.basicConfig(format="%(levelname)s: %(message)s")
+
+    logging.info('This should be verbose.')
+    logging.warning("This is a warning.")
+    logging.error("This is an error.")
+
+
+    global baseurl, session
 
     global policyName, rule_name, new_weights
     policyName = opts.policy
     rule_name = opts.rule
     new_weights = opts.weights.split(",")
 
+
     if opts.command == 'help':
         parser.print_help()
+        return 0
 
     elif opts.command == 'list':
         parser.print_help()
+        return 0
         
     elif opts.command == 'update':
+        init_config(opts.edgerc, opts.section)
         get_groupId()
 
     else:
@@ -225,9 +285,9 @@ def main():
         # in case we mistype one of the elif statements...
         parser.print_help(sys.stderr)
 
-
-    if opts.activate == 'stage' or opts.activate == 'production':
+    if opts.activate == 'staging' or opts.activate == 'production':
         activate_policy(opts.activate)
+
 
 if __name__ == '__main__':
     main()
