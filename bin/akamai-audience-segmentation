@@ -361,7 +361,401 @@ def main():
 
     if opts.command == 'help':
         if len(opts.args) > 0:
+            if opts.args[0] == 'update':#!/usr/bin/env python
+
+# Copyright 2017 Akamai Technologies, Inc. All Rights Reserved
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#   http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+"""
+usage: akamai-audience-segmentation update --policy POLICY --rule RULE
+                                              --weights WEIGHTS
+                                              [--activate ACTIVATE]
+                                              [--edgerc EDGERC]
+                                              [--section SECTION] [--verbose]
+
+required arguments:
+  --policy POLICY      Policy name
+  --rule RULE          Rule name. Example: 'Test Rule #1'
+  --weights WEIGHTS    New percentages. Example: '1,50'
+
+optional arguments:
+  --activate ACTIVATE  Activate the policy to staging|production
+  --edgerc EDGERC      Config file [default: ~/.edgerc]
+  --section SECTION    Config section in .edgerc
+  --verbose            Enable an interactive verbose mode
+
+Example #1:
+$ ./audience-segmentation --policy <policy_name> --rule <'rule_name'> --weights <'start_weight_value,end_weight_value'> --activate <staging|production>
+
+Example #2:
+$ ./audience-segmentation --edgerc <~/other_location/.edgerc> --section <other_section> --policy <policy_name> --rule <'rule_name'> --weights <'start_weight_value,end_weight_value'> --activate <staging|production>
+
+"""
+
+import requests, json, sys, os
+from akamai.edgegrid import EdgeGridAuth,EdgeRc
+import urllib
+import argparse
+import configparser
+from pygments import highlight, lexers, formatters
+import logging
+
+if sys.version_info[0] < 3:
+    from urlparse import urljoin
+else:
+    from urllib.parse import urljoin
+
+
+class MyArgumentParser(argparse.ArgumentParser):
+    def error(self, message):
+        self.print_help(sys.stderr)
+        self.exit(0, '%s: error: %s\n' % (self.prog, message))
+
+
+# Function to get the groupId
+def get_groupId():
+    print('\n*** Collecting the required information to update the rule ***\n')
+    logging.info('Calling the Audience Segmentation Cloudlet API to get the groupId')
+    
+    api_endpoint = urljoin(baseurl, '/cloudlets/api/v2/group-info')
+    logging.info('API Endpoint: GET ' + api_endpoint)
+    response = session.get(api_endpoint)
+    response = json.loads(response.text)
+    groupId = str(response[0]['groupId'])
+
+    logging.info('     groupId: ' + groupId)
+    if verbose == True: logging.info(input('Press Enter to Continue') + 'Long Live Rock n\n Roll...\n')
+
+    get_cloudletId(groupId)
+    return()
+
+
+# Function to get the cloudletId
+def get_cloudletId(groupId):
+    logging.info('Calling the Audience Segmentation Cloudlet API to get the cloudletId')
+    
+    api_endpoint = urljoin(baseurl, '/cloudlets/api/v2/cloudlet-info?gid=' + groupId)
+    logging.info('API Endpoint: GET ' + api_endpoint)
+    response = session.get(api_endpoint)
+    
+    response = json.loads(response.text)
+
+    colorful_json = format_json(response)
+    print(colorful_json)
+
+    check_which_cloudlet(response, 'AUDIENCESEGMENTATION')
+    # Check for the Audience Segmentation Cloudlet
+    #for key in response:
+    #    if key['cloudletName'] == 'AUDIENCESEGMENTATION':
+    #        cloudletId = str(key['cloudletId'])
+    #        cloudletName = AUDIENCE_SEGMENTATION
+
+    # Check for the Phased Release Cloudlet
+    for key in response:
+        if key['cloudletName'] == 'CONTINUOUSDEPLOYMENT':
+            cloudletId = str(key['cloudletId'])
+            cloudletName = 'PHASED_RELEASE'
+
+    logging.info('     cloudletId: ' + cloudletId)
+    if verbose == True: logging.info(input('Press Enter to Continue') + 'Keep on Rockin\' ...\n')
+
+    get_policyId(groupId, cloudletId, cloudletName)
+    return()
+
+
+def check_which_cloudlet(response, cloudletName):
+    for key in response:
+        if key['cloudletName'] == 'CONTINUOUSDEPLOYMENT':
+            cloudletId = str(key['cloudletId'])
+            cloudletName = 'PHASED_RELEASE'
+
+        #elif:
+            
+
+# Get the policyId and Staging Version
+def get_policyId(groupId, cloudletId, cloudletName):
+    global policyId
+    logging.info('Calling the Audience Segmentation Cloudlet API to get the policyId and last version')
+    
+    api_endpoint = urljoin(baseurl, '/cloudlets/api/v2/policies?gid=' + groupId + '&includeDeleted=false&cloudletId=' + cloudletId)
+    logging.info('API Endpoint: GET ' + api_endpoint)
+    response = session.get(api_endpoint)
+
+    response = json.loads(response.text)
+    policyId='Policy Not Found'
+    for key in response:
+        if key['name'] == policyName:
+            policyId = str(key['policyId'])
+            # Get the last active STAGING|PROD version
+            version = str(key['activations'][0]['policyInfo']['version'])
+
+    logging.info('     policyId: ' + policyId + '\n           Based on version: ' + version)
+    if verbose == True: logging.info(input('Press Enter to Continue') + 'Let it be...')
+
+    clone_policyId_version(policyId, version, cloudletName)
+    return()
+
+
+# Clone the last active version in STAGE|PROD and save the output for later modifications. For example, if the active version in staging is higher than the one in prod then the staging one will be the baseline.
+def clone_policyId_version(policyId, version, cloudletName):
+    print('\n*** Creating new policy "' + policyName + '" based on version ' + version + ' ***\n')
+    headers = {'content-type': 'application/json'}
+    
+    # Convert the json object to a string that the API can interpret
+    based_on_version = 'Based on version ' + version
+    post_body_json = {"description":based_on_version,"matchRuleFormat":"1.0","matchRules":[]}
+    post_body = json.dumps(post_body_json, sort_keys=True, indent=4)
+    colorful_json = format_json(post_body_json)
+
+    api_endpoint = urljoin(baseurl, '/cloudlets/api/v2/policies/' + policyId + '/versions?cloneVersion=' + version)
+    logging.info('API Endpoint: POST ' + api_endpoint)
+    logging.info('Headers for the POST request: ' + str(headers))
+    logging.info('POST body for the request:\n' + colorful_json)
+    if verbose == True: logging.info(input('Press Enter to Continue') + 'Let it be...')
+
+    request = session.post(api_endpoint, data=post_body, headers=headers)
+    request = json.loads(request.text)
+    # Pretty print
+    colorful_json = format_json(request)
+
+    logging.info('Response body from the new cloned version:\n' + colorful_json)
+    if verbose == True: logging.info(input('Press Enter to Continue') + 'Fox on the run...')
+
+    get_akaRuleId(request, cloudletName)
+    return()
+
+
+# Get the rule details. There are 2 options, use the previous output to build the rule structure, or run an API to the akaRuleID endpoint to get the details. We'll go with option 1
+def get_akaRuleId(request, cloudletName):
+    global akaRuleId, new_version
+    logging.info('Collecting information from the cloned version and rule: ' + rule_name)
+    new_version = str(request['version'])
+    current_range = [ ]
+    for key in request['matchRules']:
+        if key['name'] == rule_name:
+            akaRuleId = key['akaRuleId']
+            originId = key['forwardSettings']['originId']
+            
+            if cloudletName == 'AUDIENCE_SEGMENTATION':
+                for key_2 in key['matches']:
+                    if key_2['matchType'] == 'range':
+                        rule_to_edit = key
+                        for current_range_value in key_2['objectMatchValue']['value']:
+                            current_range.append(current_range_value)
+    
+            
+            if cloudletName == 'PHASED_RELEASE':
+                rule_to_edit = key
+                current_range = key['forwardSettings']['percent']
+
+
+    logging.info('     New version: ' + new_version + '\n           akaRuleId: ' + akaRuleId + '\n           originId: ' + originId + '\n           current percentage(s): ' + str(current_range))
+
+
+    if verbose == True: logging.info(input('Press Enter to Continue') + 'Fade to Black...')
+
+    colorful_json = format_json(rule_to_edit)
+
+    logging.info('Body of the rule to edit: \n' + colorful_json)
+    if verbose == True: logging.info(input('Press Enter to Continue') + 'Holy Diver...')
+
+    edit_rule(rule_to_edit, new_version, cloudletName)
+    return()
+
+
+# Make the modifications to the downloaded rule JSON for the next PUT API call
+def edit_rule(rule_to_edit, new_version, cloudletName):
+    logging.info('Making edits to the rule: ' + rule_name)
+    # Remove the location key which is not allowed by our next API call
+    del rule_to_edit['location']
+    # Modify the range with the users's provided values
+    if cloudletName == 'AUDIENCE_SEGMENTATION':
+        n = 0
+        for key in rule_to_edit['matches']:
+            if key['matchType'] == 'range':
+                rule_to_edit['matches'][n]['objectMatchValue']['value'][0] = new_weights[0]
+                rule_to_edit['matches'][n]['objectMatchValue']['value'][1] = new_weights[1]    
+            n = n+1
+    
+    if cloudletName == 'PHASED_RELEASE':
+        rule_to_edit['forwardSettings']['percent'] = int(new_weights[0])
+
+    # Convert json to string to push to the API endpoint
+    colorful_json = format_json(rule_to_edit)
+    logging.info('Body of the new rule: \n' + colorful_json)
+    if verbose == True: logging.info(input('Press Enter to Continue') + 'Bohemian Rhapsody...')
+    push_new_rule(rule_to_edit, new_version)
+    return()
+
+
+# Push the new rule
+def push_new_rule(rule_to_edit, new_version):
+    logging.info('Pushing the updated rule')
+    rule_to_edit = json.dumps(rule_to_edit, sort_keys=True, indent=4)
+    headers = {'content-type': 'application/json'}
+    # Convert the json object to a string that the API can interpret
+    api_endpoint = urljoin(baseurl, '/cloudlets/api/v2/policies/' + policyId + '/versions/' + new_version + '/rules/' + akaRuleId)
+    
+    logging.info('API Endpoint: PUT ' + api_endpoint)
+    logging.info('Headers for the PUT request: ' + str(headers))
+
+    request = session.put(api_endpoint, data=rule_to_edit, headers=headers)
+    # Pretty print
+    request = json.loads(request.text)
+    colorful_json = format_json(request)
+
+    logging.info('Body of the response after pushing the rule: \n' + colorful_json)
+    if verbose == True: logging.info(input('Press Enter to Continue') + 'Stairway to Heaven...')
+    return()
+
+
+# Policy activation
+def activate_policy(activation_network):
+    print('\n*** Activating the new Policy ***\n')
+    headers = {'content-type': 'application/json'}
+    # JSON body for the request which only specifies the activation network staging|prod
+    post_body_json = {"network":activation_network}
+    post_body = json.dumps(post_body_json, sort_keys=True, indent=4)
+    post_body_json = format_json(post_body_json)
+
+    api_endpoint = urljoin(baseurl, '/cloudlets/api/v2/policies/' + policyId + '/versions/' + new_version + '/activations')
+
+    logging.info('API Endpoint: POST ' + api_endpoint)
+    logging.info('Headers for the PUT request: ' + str(headers))
+    logging.info('POST body for the request:\n' + post_body_json)
+
+    request = session.post(api_endpoint, data=post_body, headers=headers)
+    status_code = request.status_code
+    request = json.loads(request.text)
+    colorful_json = format_json(request)
+
+    logging.info('Body of the response after activating the rule: \n' + colorful_json)
+    if status_code != 200:
+        print(colorful_json)
+    return()
+
+
+# JSON body formatting and coloring
+def format_json(json_body):
+    json_body = json.dumps(json_body, sort_keys=True, indent=4)
+    json_body = highlight(json_body, lexers.JsonLexer(), formatters.TerminalFormatter())
+    return(json_body)
+
+
+def init_config(edgerc_file, section):
+    global baseurl, session
+    # Check if the edgerc_file variable or the AKAMAI_EDGERC env var exist then use a default value if they don't exist.
+    if not edgerc_file:
+        if not os.getenv("AKAMAI_EDGERC"):
+            edgerc_file = os.path.join(os.path.expanduser("~"), '.edgerc')
+        else:
+            edgerc_file = os.getenv("AKAMAI_EDGERC")
+
+    if not os.access(edgerc_file, os.R_OK):
+        print("Unable to read edgerc file \"%s\"" % edgerc_file)
+        exit(1)
+
+    if not section:
+        if not os.getenv("AKAMAI_EDGERC_SECTION"):
+            section = "cloudlets"
+        else:
+            section = os.getenv("AKAMAI_EDGERC_SECTION")
+
+    try:
+        edgerc = EdgeRc(edgerc_file)
+        baseurl = 'https://%s' % edgerc.get(section, 'host')
+
+        session = requests.Session()
+        session.auth = EdgeGridAuth.from_edgerc(edgerc, section)
+
+        return(baseurl, session)
+
+    except configparser.NoSectionError:
+        print("Edgerc section \"%s\" not found" % section)
+        exit(1)
+    except Exception:
+        print("Unknown error occurred trying to read edgerc file (%s)" % edgerc_file)
+        exit(1)
+
+def verbosity():
+    return()
+
+def main():
+    parser = MyArgumentParser(
+            description='Akamai CLI Audience Segmentation Cloudlet Python Example', add_help=False
+    )
+    parser.add_argument('--version', action='version', version='Audience Segmentation Rule Updater v1.2')
+
+    subparsers = parser.add_subparsers(title='Commands', dest='command', metavar="")
+
+    create_parser = subparsers.add_parser('help', help='Show available help').add_argument('args', metavar="", nargs=argparse.REMAINDER)
+    parser_update = subparsers.add_parser('update', help='Modify target rule', add_help=False)
+    
+    mandatory = parser_update.add_argument_group('required arguments')
+    mandatory.add_argument('--policy', required=True, help='Policy name')
+    mandatory.add_argument('--rule', required=True, help='Rule name. Example: \'Test Rule #1\'')
+    mandatory.add_argument('--weights', required=True, help='New percentages. Example: \'1,50\'')
+    
+    optional = parser_update.add_argument_group('optional arguments')
+    optional.add_argument('--activate', choices={'staging', 'production'}, help='Activate the policy to staging|production')
+    optional.add_argument('--edgerc', help='Config file [default: ~/.edgerc]')
+    optional.add_argument('--section', help='Config section in .edgerc [default: cloudlets]')
+    optional.add_argument('--verbose', action='store_true', help='Enable an interactive verbose mode')
+
+    opts = parser.parse_args()
+
+    if len(sys.argv) <= 1:
+        parser.print_help()
+        return 0
+
+    global baseurl, session
+    global policyName, rule_name, new_weights, verbose
+
+    if opts.command == 'help':
+        if len(opts.args) > 0:
             if opts.args[0] == 'update':
+                parser_update.print_help()
+        else:
+            parser.print_help()
+        return 0
+
+    elif opts.command == 'update':
+        policyName = opts.policy
+        rule_name = opts.rule
+        new_weights = opts.weights.split(",")
+        verbose = False
+        if opts.verbose:
+            verbose = True
+            logging.basicConfig(format="%(levelname)s: %(message)s", level=logging.INFO)
+            logging.info("Verbose output.")
+        else:
+            logging.basicConfig(format="%(levelname)s: %(message)s")
+
+        init_config(opts.edgerc, opts.section)
+        get_groupId()
+
+    else:
+        # argparse will error on unexpected commands, but
+        # in case we mistype one of the elif statements...
+        parser.print_help(sys.stderr)
+
+    if opts.activate == 'staging' or opts.activate == 'production':
+        activate_policy(opts.activate)
+
+
+if __name__ == '__main__':
+    main()
                 parser_update.print_help()
         else:
             parser.print_help()
