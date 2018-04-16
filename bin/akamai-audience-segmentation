@@ -87,19 +87,41 @@ def get_cloudletId(groupId):
     response = session.get(api_endpoint)
     
     response = json.loads(response.text)
+
+    colorful_json = format_json(response)
+    print(colorful_json)
+
+    check_which_cloudlet(response, 'AUDIENCESEGMENTATION')
+    # Check for the Audience Segmentation Cloudlet
+    #for key in response:
+    #    if key['cloudletName'] == 'AUDIENCESEGMENTATION':
+    #        cloudletId = str(key['cloudletId'])
+    #        cloudletName = AUDIENCE_SEGMENTATION
+
+    # Check for the Phased Release Cloudlet
     for key in response:
-        if key['cloudletName'] == 'AUDIENCESEGMENTATION':
+        if key['cloudletName'] == 'CONTINUOUSDEPLOYMENT':
             cloudletId = str(key['cloudletId'])
+            cloudletName = 'PHASED_RELEASE'
 
     logging.info('     cloudletId: ' + cloudletId)
     if verbose == True: logging.info(input('Press Enter to Continue') + 'Keep on Rockin\' ...\n')
 
-    get_policyId(groupId, cloudletId)
+    get_policyId(groupId, cloudletId, cloudletName)
     return()
 
 
+def check_which_cloudlet(response, cloudletName):
+    for key in response:
+        if key['cloudletName'] == 'CONTINUOUSDEPLOYMENT':
+            cloudletId = str(key['cloudletId'])
+            cloudletName = 'PHASED_RELEASE'
+
+        #elif:
+            
+
 # Get the policyId and Staging Version
-def get_policyId(groupId, cloudletId):
+def get_policyId(groupId, cloudletId, cloudletName):
     global policyId
     logging.info('Calling the Audience Segmentation Cloudlet API to get the policyId and last version')
     
@@ -118,12 +140,12 @@ def get_policyId(groupId, cloudletId):
     logging.info('     policyId: ' + policyId + '\n           Based on version: ' + version)
     if verbose == True: logging.info(input('Press Enter to Continue') + 'Let it be...')
 
-    clone_policyId_version(policyId, version)
+    clone_policyId_version(policyId, version, cloudletName)
     return()
 
 
 # Clone the last active version in STAGE|PROD and save the output for later modifications. For example, if the active version in staging is higher than the one in prod then the staging one will be the baseline.
-def clone_policyId_version(policyId, version):
+def clone_policyId_version(policyId, version, cloudletName):
     print('\n*** Creating new policy "' + policyName + '" based on version ' + version + ' ***\n')
     headers = {'content-type': 'application/json'}
     
@@ -147,12 +169,12 @@ def clone_policyId_version(policyId, version):
     logging.info('Response body from the new cloned version:\n' + colorful_json)
     if verbose == True: logging.info(input('Press Enter to Continue') + 'Fox on the run...')
 
-    get_akaRuleId(request)
+    get_akaRuleId(request, cloudletName)
     return()
 
 
 # Get the rule details. There are 2 options, use the previous output to build the rule structure, or run an API to the akaRuleID endpoint to get the details. We'll go with option 1
-def get_akaRuleId(request):
+def get_akaRuleId(request, cloudletName):
     global akaRuleId, new_version
     logging.info('Collecting information from the cloned version and rule: ' + rule_name)
     new_version = str(request['version'])
@@ -161,13 +183,23 @@ def get_akaRuleId(request):
         if key['name'] == rule_name:
             akaRuleId = key['akaRuleId']
             originId = key['forwardSettings']['originId']
-            for key_2 in key['matches']:
-                if key_2['matchType'] == 'range':
-                    rule_to_edit = key
-                    for current_range_value in key_2['objectMatchValue']['value']:
-                        current_range.append(current_range_value)
+            
+            if cloudletName == 'AUDIENCE_SEGMENTATION':
+                for key_2 in key['matches']:
+                    if key_2['matchType'] == 'range':
+                        rule_to_edit = key
+                        for current_range_value in key_2['objectMatchValue']['value']:
+                            current_range.append(current_range_value)
     
-    logging.info('     New version: ' + new_version + '\n           akaRuleId: ' + akaRuleId + '\n           originId: ' + originId + '\n           current range: ' + str(current_range))
+            
+            if cloudletName == 'PHASED_RELEASE':
+                rule_to_edit = key
+                current_range = key['forwardSettings']['percent']
+
+
+    logging.info('     New version: ' + new_version + '\n           akaRuleId: ' + akaRuleId + '\n           originId: ' + originId + '\n           current percentage(s): ' + str(current_range))
+
+
     if verbose == True: logging.info(input('Press Enter to Continue') + 'Fade to Black...')
 
     colorful_json = format_json(rule_to_edit)
@@ -175,23 +207,27 @@ def get_akaRuleId(request):
     logging.info('Body of the rule to edit: \n' + colorful_json)
     if verbose == True: logging.info(input('Press Enter to Continue') + 'Holy Diver...')
 
-    edit_rule(rule_to_edit, new_version)
+    edit_rule(rule_to_edit, new_version, cloudletName)
     return()
 
 
 # Make the modifications to the downloaded rule JSON for the next PUT API call
-def edit_rule(rule_to_edit, new_version):
+def edit_rule(rule_to_edit, new_version, cloudletName):
     logging.info('Making edits to the rule: ' + rule_name)
     # Remove the location key which is not allowed by our next API call
     del rule_to_edit['location']
     # Modify the range with the users's provided values
-    n = 0
-    for key in rule_to_edit['matches']:
-        if key['matchType'] == 'range':
-            rule_to_edit['matches'][n]['objectMatchValue']['value'][0] = new_weights[0]
-            rule_to_edit['matches'][n]['objectMatchValue']['value'][1] = new_weights[1]    
-        n = n+1
+    if cloudletName == 'AUDIENCE_SEGMENTATION':
+        n = 0
+        for key in rule_to_edit['matches']:
+            if key['matchType'] == 'range':
+                rule_to_edit['matches'][n]['objectMatchValue']['value'][0] = new_weights[0]
+                rule_to_edit['matches'][n]['objectMatchValue']['value'][1] = new_weights[1]    
+            n = n+1
     
+    if cloudletName == 'PHASED_RELEASE':
+        rule_to_edit['forwardSettings']['percent'] = int(new_weights[0])
+
     # Convert json to string to push to the API endpoint
     colorful_json = format_json(rule_to_edit)
     logging.info('Body of the new rule: \n' + colorful_json)
@@ -300,7 +336,7 @@ def main():
 
     subparsers = parser.add_subparsers(title='Commands', dest='command', metavar="")
 
-    create_parser = subparsers.add_parser('help', help='Show available help')
+    create_parser = subparsers.add_parser('help', help='Show available help').add_argument('args', metavar="", nargs=argparse.REMAINDER)
     parser_update = subparsers.add_parser('update', help='Modify target rule', add_help=False)
     
     mandatory = parser_update.add_argument_group('required arguments')
@@ -309,9 +345,9 @@ def main():
     mandatory.add_argument('--weights', required=True, help='New percentages. Example: \'1,50\'')
     
     optional = parser_update.add_argument_group('optional arguments')
-    optional.add_argument('--activate', help='Activate the policy to staging|production')
+    optional.add_argument('--activate', choices={'staging', 'production'}, help='Activate the policy to staging|production')
     optional.add_argument('--edgerc', help='Config file [default: ~/.edgerc]')
-    optional.add_argument('--section', help='Config section in .edgerc')
+    optional.add_argument('--section', help='Config section in .edgerc [default: cloudlets]')
     optional.add_argument('--verbose', action='store_true', help='Enable an interactive verbose mode')
 
     opts = parser.parse_args()
@@ -324,9 +360,13 @@ def main():
     global policyName, rule_name, new_weights, verbose
 
     if opts.command == 'help':
-        parser.print_help()
+        if len(opts.args) > 0:
+            if opts.args[0] == 'update':
+                parser_update.print_help()
+        else:
+            parser.print_help()
         return 0
-      
+
     elif opts.command == 'update':
         policyName = opts.policy
         rule_name = opts.rule
